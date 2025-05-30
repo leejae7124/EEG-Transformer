@@ -11,7 +11,8 @@ def pair(t):
     return t if isinstance(t, tuple) else (t, t)
 
 
-class FeedForward(nn.Module):
+class FeedForward(nn.Module): #Transformer의 MLP 블록 역할.
+    # nn.LayerNorm -> Linear -> GELU -> Dropout -> Linear -> Dropout
     def __init__(self, dim, hidden_dim, dropout=0.):
         super().__init__()
         self.net = nn.Sequential(
@@ -27,7 +28,7 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
-class Attention(nn.Module):
+class Attention(nn.Module): #Multi-head self-attention을 구현한 모듈.
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.):
         super().__init__()
         inner_dim = dim_head * heads
@@ -57,8 +58,10 @@ class Attention(nn.Module):
         return self.to_out(out)
 
 
-class Transformer(nn.Module):
-    def cnn_block(self, in_chan, kernel_size, dp):
+class Transformer(nn.Module): #Deformer의 핵심 구조
+    # CNN과 Transformer를 결합한 Hybrid Layer를 여러 층 쌓은 구조.
+    # nn.Sequential(): Pytorch에서 여러 레이어를 순차적으로 묶어주는 컨테이너.
+    def cnn_block(self, in_chan, kernel_size, dp): # fine-grained를 위해 병렬적으로 구성된 cnn 블록
         return nn.Sequential(
             nn.Dropout(p=dp),
             nn.Conv1d(in_channels=in_chan, out_channels=in_chan,
@@ -68,21 +71,33 @@ class Transformer(nn.Module):
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
 
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, in_chan, fine_grained_kernel=11, dropout=0.):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, in_chan, fine_grained_kernel=11, dropout=0.): #Atteitnion + CNN 통합 구조를 "정의!!"
+        #파라미터 설명
+        # dim: 입력 feature의 차원 (시간 feature 길이 등), depth: Transformer 블록 몇 층 쌓을지, heads: Multi=head attention의 head 수
+        # dim_head: 각 head당 차원, mlp_dim: FeedForward 레이어의 은닉 크기, in_chan: CNN의 입력 채널 수(eeg 채널 수?)
+        # fine_grained_kernel: CNN에 사용할 커널 크기, dropout: 드롭아웃 비율
         super().__init__()
         self.layers = nn.ModuleList([])
-        for i in range(depth):
-            dim = int(dim * 0.5)
+        for i in range(depth): #depth는 HCT 블록 갯수랑 똑같음!! 정의함.
+            dim = int(dim * 0.5) #층이 깊어질수록 차원을 절반씩 줄인다. Transformer가 점점 압축된 feature를 학습
             self.layers.append(nn.ModuleList([
                 Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout),
                 FeedForward(dim, mlp_dim, dropout=dropout),
                 self.cnn_block(in_chan=in_chan, kernel_size=fine_grained_kernel, dp=dropout)
-            ]))
-        self.pool = nn.MaxPool1d(kernel_size=2, stride=2)
+            ])) #하나의 HCT 블록 같음. 포함된 모듈: Attention, FeedForward, cnn_block
+            #다음과 같은 구조가 된다.
+            #             [
+            # [attn1, ff1, cnn1],
+            # [attn2, ff2, cnn2],
+            # ...
+            # ]
 
-    def forward(self, x):
+        self.pool = nn.MaxPool1d(kernel_size=2, stride=2) #입력 feature를 다운샘플링. coarse feature 추출에 사용?
+
+    def forward(self, x): #x의 shape는 (batch_size, in_chan, time_steps) 형태의 시계열 입력 -> EEG 데이터의 CNN 전처리 이후의 feature
+        #forward는 데이터를 실행함. 앞에서 정의한 블록을 "하나씩 꺼내서 입력 데이터(x)"에 적용하는 부분. 즉, 실제 forward pass(순전파) 때 실행되는 "데이터 흐름 처리 로직"
         dense_feature = []
-        for attn, ff, cnn in self.layers:
+        for attn, ff, cnn in self.layers: #정의한 블록수만큼? 반복
             x_cg = self.pool(x)
             x_cg = attn(x_cg) + x_cg
             x_fg = cnn(x)

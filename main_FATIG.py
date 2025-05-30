@@ -3,9 +3,10 @@ from utils import log2csv, ensure_path
 from Task import LOSO
 import os
 
+
 parser = ArgumentParser()
-parser.add_argument('--full-run', type=int, default=1, help='If it is set as 1, you will run LOSO on the same machine.')
-parser.add_argument('--test-sub', type=int, default=0, help='If full-run is set as 0, you can use this to leave this '
+parser.add_argument('--full-run', type=int, default=1, help='If it is set as 1, you will run LOSO on the same machine.') #전체 피험자 대상으로 실행
+parser.add_argument('--test-sub', type=int, default=0, help='If full-run is set as 0, you can use this to leave this ' # full-run = 0 일 때, 테스트할 피험자 인덱스
                                                             'subject only. Then you can divided LOSO on different'
                                                             ' machines')
 ######## Data ########
@@ -43,9 +44,9 @@ parser.add_argument('--num-layers', type=int, default=6)
 
 
 args = parser.parse_args()
-all_sub_list = [0, 4, 21, 30, 34, 40, 41, 42, 43, 44, 52]
+all_sub_list = [0, 4, 21, 30, 34, 40, 41, 42, 43, 44, 52] #피험자 리스트 정의
 
-if args.model == 'TSception':
+if args.model == 'TSception': #모델에 따른 하이퍼파라미터 유효성 검사, TSception 모델일 경우, 입력 형식이 맞는지 확인
     assert args.graph_type == 'TS', "When using TSception, suppose to get graph_type of 'TS'," \
                                     " but get {} instead!".format(args.graph_type)
     assert args.num_chan == 24, "When using TSception, suppose to have num_chan==24," \
@@ -56,17 +57,17 @@ if args.model == 'LGGNet':
                                                            "of 'LGG-X'(X=G, F, or H), but get {} " \
                                                            "instead!".format(args.graph_type)
 
-if args.full_run:
+if args.full_run: #실행할 피험자 리스트 설정
     sub_to_run = all_sub_list
 else:
     sub_to_run = [args.test_sub]
 
 logs_name = 'logs_{}_{}'.format(args.dataset, args.model)
-for sub in sub_to_run:
-    results = LOSO(
-        test_idx=[sub], subjects=all_sub_list,
+for sub in sub_to_run: #피험자별 실험 실행 루프
+    results = LOSO( #LOSO 방식으로 하나의 피험자를 테스트로 두고, 나머지는 학습 데이터로 사용. LOSO: 피험자 단위의 교차 검증 방법.
+        test_idx=[sub], subjects=all_sub_list,#반복하면 각 피험자에 대해 학습-검증-테스트 수행
         experiment_ID='sub{}'.format(sub), args=args, logs_name=logs_name
     )
     log_path = os.path.join(args.save_path, logs_name, 'sub{}'.format(sub))
     ensure_path(log_path)
-    log2csv(os.path.join(log_path, 'result.csv'), results[0])
+    log2csv(os.path.join(log_path, 'result.csv'), results[0]) #실험 결과를 csv 형식으로 저장

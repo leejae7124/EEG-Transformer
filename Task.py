@@ -3,9 +3,12 @@ import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 from utils import *
-
+import torch
+import argparse
+torch.serialization.add_safe_globals([argparse.Namespace])
 
 def LOSO(test_idx: list, subjects: list, experiment_ID, logs_name, args):
+
     pl.seed_everything(seed=args.random_seed)
     torch.manual_seed(args.random_seed)
     torch.backends.cudnn.deterministic = True
@@ -47,8 +50,11 @@ def LOSO(test_idx: list, subjects: list, experiment_ID, logs_name, args):
             accelerator="gpu", devices=[args.gpu], max_epochs=args.max_epoch, logger=logger,
             callbacks=[checkpoint_callback]
         )
+    #모델 학습 및 테스트
     trainer.fit(model, train_dataloaders=train_loader, val_dataloaders=val_loader)
+    #최고 성능 평가: 체크포인트 콜백에서 저장된 최고의 검증 정확도를 가져온다.
     best_val_metrics = trainer.checkpoint_callback.best_model_score.item()
+    #저장된 최적의 체크포인트를 로드한 후, 테스트 데이터를 이용해 최종 평가.
     results = trainer.test(ckpt_path="best", dataloaders=test_loader)
     results[0]['best_val'] = best_val_metrics
     return results
