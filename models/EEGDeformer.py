@@ -109,6 +109,7 @@ class Transformer(nn.Module): #Deformer의 핵심 구조
         x_dense = torch.cat(dense_feature, dim=-1)  # b, in_chan*depth, 각 블록에서 생성한 x_info들을 이어붙임. ip 모듈의 결과를 concat!
         x = x.view(x.size(0), -1)   # b, in_chan*d_hidden_last_layer, 전체 시퀀스를 평탄화
         emd = torch.cat((x, x_dense), dim=-1)  # b, in_chan*(depth + d_hidden_last_layer), 그냥 output과 ip 모듈 output을 연결하여 최종 벡터 완성
+
         return emd
 
     def get_info(self, x): #신호 요약 정보 추출. CNN 출력을 기반으로 각 채널별 에너지 수준 요약을 구한다. IP 모듈?

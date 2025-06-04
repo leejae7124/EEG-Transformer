@@ -73,7 +73,7 @@ class Transformer(nn.Module): #Deformer의 핵심 구조
             nn.MaxPool1d(kernel_size=2, stride=2)
         )
 
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, in_chan, fine_grained_kernel=11, dropout=0., num_kernel=64, proj_dim=128): #Atteitnion + CNN 통합 구조를 "정의!!"
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, in_chan, fine_grained_kernel=11, dropout=0.): #Atteitnion + CNN 통합 구조를 "정의!!"
         #파라미터 설명
         # dim: 입력 feature의 차원 (시간 feature 길이 등), depth: Transformer 블록 몇 층 쌓을지, heads: Multi=head attention의 head 수
         # dim_head: 각 head당 차원, mlp_dim: FeedForward 레이어의 은닉 크기, in_chan: CNN의 입력 채널 수(eeg 채널 수?)
@@ -95,12 +95,31 @@ class Transformer(nn.Module): #Deformer의 핵심 구조
             # ]
 
         self.pool = nn.MaxPool1d(kernel_size=2, stride=2) #입력 feature를 다운샘플링. coarse feature 추출에 사용?
-        init_dim = dim
-        self.hct_output_dims = [num_kernel * int(init_dim * (0.5 ** (i + 1))) for i in range(depth)]
+        
+        # self.hct_output_dims = [num_kernel * int(init_dim * (0.5 ** (i + 1))) for i in range(depth)]
+        # print("Calculated hct_output_dims:", self.hct_output_dims)  # ← 여기서 출력
 
-        self.projection = nn.ModuleList([
-            nn.Linear(current_hct_dim, proj_dim) for current_hct_dim in self.hct_output_dims
-        ])
+        self.projection1 = nn.Sequential(
+            nn.Linear(6144, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+        self.projection2 = nn.Sequential(
+            nn.Linear(3072, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+        self.projection3 = nn.Sequential(
+            nn.Linear(1536, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+        self.projection4 = nn.Sequential(
+            nn.Linear(768, 256),
+            nn.ReLU(),
+            nn.Dropout(0.2)
+        )
+
 
 
 
@@ -108,7 +127,6 @@ class Transformer(nn.Module): #Deformer의 핵심 구조
 
     def forward(self, x): #x의 shape는 (batch_size, in_chan, time_steps) 형태의 시계열 입력 -> EEG 데이터의 CNN 전처리 이후의 feature
         #forward는 데이터를 실행함. 앞에서 정의한 블록을 "하나씩 꺼내서 입력 데이터(x)"에 적용하는 부분. 즉, 실제 forward pass(순전파) 때 실행되는 "데이터 흐름 처리 로직"
-        b = x.size(0)
         dense_feature = [] #각 블록에서 추출한 요약 정보(x_info)를 저장할 리스트(나중에 concatenation용)
         for i, (attn, ff, cnn) in enumerate(self.layers): #정의한 블록수만큼? 반복
             x_cg = self.pool(x)
@@ -118,7 +136,14 @@ class Transformer(nn.Module): #Deformer의 핵심 구조
             
             # dense_feature.append(x_info)
             x = ff(x_cg) + x_fg #hct block i의 출력
-            x_proj = self.projection[i](x.view(b, -1))
+            if i == 0:
+                x_proj = self.projection1(x.view(x.size(0), -1))
+            elif i == 1:
+                x_proj = self.projection2(x.view(x.size(0), -1))
+            elif i == 2:
+                x_proj = self.projection3(x.view(x.size(0), -1))
+            elif i == 3:
+                x_proj = self.projection4(x.view(x.size(0), -1))
             combined = torch.cat([x_proj, x_info], dim=-1)
             dense_feature.append(combined)
             
@@ -187,7 +212,7 @@ class Deformer(nn.Module):
         out_size = int(num_kernel * L[-1]) + int(num_kernel * depth) #transformer 마지막 레이어에서 나온 feature의 크기 + 각 hct 블록에서 나온 dense summary(x_info)들을 concat한 것.
 
         self.mlp_head = nn.Sequential(
-            nn.Linear(out_size, num_classes)
+            nn.Linear(1280, num_classes)
         ) #모델의 classifier head. 
 
     def forward(self, eeg):
